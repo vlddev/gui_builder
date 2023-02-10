@@ -1,0 +1,81 @@
+import re
+import sqlite3 as lite
+import dao
+
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
+
+def normalizeStr(str):
+    norm = str.replace('_', ' ')
+    norm = re.sub(r'\W+', ' ', norm)
+    norm = " ".join(norm.split())
+    return norm.upper()
+
+def fetchAsObjList(cursor, daoClass):
+    data = []
+    row = cursor.fetchone()
+    while row != None:
+        obj = daoClass(dict_factory(cursor, row))
+        data.append(obj)
+        row = cursor.fetchone()
+    return data
+
+def fetchAsObj(cursor, daoClass):
+    ret = None
+    row = cursor.fetchone()
+    if row != None:
+        ret = daoClass(dict_factory(cursor, row))
+    return ret
+
+{% for tbl in tablelist -%}
+{% if tbl.pkColumns|length == 1 -%}
+{# get obj by primary key #}
+def get_{{ tbl.classname }}(con, id) -> dao.{{ tbl.classname }}:
+    cur = con.cursor()
+    cur.execute('SELECT * FROM {{ tbl.name }} WHERE {{tbl.pkColumns[0]}} = ?', (id,))
+    return fetchAsObj(cur, dao.{{ tbl.classname }})
+{# update obj by primary key #}
+def update_{{ tbl.classname }}(con, obj: dao.{{ tbl.classname }}):
+    cur = con.cursor()
+    cur.execute('{{tbl.getUpdateById()}}', ({{ tbl.getUpdateFields('obj') }}, obj.{{tbl.pkColumns[0]}}))
+    return
+{# insert new obj #}
+def insert_{{ tbl.classname }}(con, obj: dao.{{ tbl.classname }}):
+    cur = con.cursor()
+    cur.execute('{{tbl.getInsert()}}', ({{ tbl.getUpdateFields('obj') }}))
+    return
+{# delete obj  by primary key #}
+def delete_{{ tbl.classname }}(con, id):
+    cur = con.cursor()
+    cur.execute('DELETE FROM {{ tbl.name }} WHERE {{tbl.pkColumns[0]}} = ?', (id,))
+    return
+{#    #}
+{% for constraint in tbl.constraints -%}
+{% if constraint.type == "foreign_key" -%}
+{# get list[obj] by foreign key #}
+def get_{{ tbl.classname }}_by_{{constraint.columns[0]}}(con, id) -> list[dao.{{ tbl.classname }}]:
+    cur = con.cursor()
+    cur.execute('SELECT * FROM {{ tbl.name }} WHERE {{constraint.columns[0]}} = ?', (id,))
+    return fetchAsObjList(cur, dao.{{ tbl.classname }})
+{% endif -%}
+{% endfor -%}
+{# (optional) get list[obj] by column #}
+{%- for col in tbl.columns -%}
+{% if col.searchable -%}
+{# (optional) find list[obj] by column (use like in SQL) #}
+def {{ tbl.getFindByMethod(col.name) }}(con, val) -> list[dao.{{ tbl.classname }}]:
+    cur = con.cursor()
+    cur.execute('SELECT * FROM {{ tbl.classname }} WHERE {{ col.name }} like ?', ('%'+normalizeStr(val)+'%',))
+    return fetchAsObjList(cur, dao.{{ tbl.classname }})
+{% endif -%}
+{% endfor -%}
+{# insert new obj
+ # update obj by pk
+ # delete obj by pk
+#}
+{% endif %}
+{% endfor %}
+

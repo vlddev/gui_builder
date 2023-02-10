@@ -1,0 +1,38 @@
+import json
+
+def convTo2d(objList):
+    return [obj.asArray() for obj in objList]
+
+class BaseObj:
+    def __init__(self, properties):
+        self.__class__.properties = properties
+
+    def setData(self, data, propertyPrefix: str =''):
+        if isinstance(data, dict):
+            # data is a dictionary
+            for prop in self.__class__.properties:
+                self.__dict__[prop] = data.get(propertyPrefix+prop)
+        if isinstance(data, list):
+            # data is an array
+            for i in range(len(self.__class__.properties)):
+                self.__dict__[self.__class__.properties[i]] = data[i]
+
+    def toJSON(self):
+        return json.dumps(self.__dict__)
+
+    def asArray(self):
+        return [self.__dict__[prop] for prop in self.__class__.properties]
+
+class BaseObjJsonEncoder(json.JSONEncoder):
+        def default(self, o):
+            return o.__dict__
+
+{% for tbl in tablelist %}
+class {{ tbl.classname }}(BaseObj):
+    def __init__(self, data, propertyPrefix: str =''):
+        {% for col in tbl.columns -%}
+        self.{{col.name}} = None
+        {% endfor -%}
+        super().__init__([{{tbl.getColumns()}}])
+        self.setData(data, propertyPrefix)
+{% endfor %}

@@ -1,0 +1,81 @@
+import PySimpleGUI as sg
+import sqlite3 as lite
+import datetime
+import db_util
+import dao
+
+{% set curTable = model.tables[form.table] %}
+{% set searchColumnName = curTable.getSearchableColumns()[0].name %}
+{% set findMethod = curTable.getFindByMethod(searchColumnName) %}
+
+def edit_{{form.table}}(con, id):
+    #  populate fields
+    {{form.table}}Obj = db_util.get_{{form.table}}(con, id)
+    edit_{{form.table}}_layout = []
+    {% for col in curTable.columns -%}
+    {% if col.primaryKey -%}
+    # make primary key not editable
+    edit_{{form.table}}_layout.append(
+        [sg.Text('{{col.name}}', (12, 1)), 
+        sg.In(size=(60, 1), default_text={{form.table}}Obj.{{col.name}}, key='key_edit_{{form.table}}_{{col.name}}', disabled=True)])
+    {% else -%}
+    edit_{{form.table}}_layout.append(
+        [sg.Text('{{col.name}}', (12, 1)), 
+        sg.In(size=(60, 1), default_text={{form.table}}Obj.{{col.name}}, key='key_edit_{{form.table}}_{{col.name}}')])
+    {% endif -%}
+    {% endfor -%}
+    # save button
+    edit_{{form.table}}_layout.append([sg.Button("Save", key='key_{{form.table}}_save')])
+
+    win_edit_{{form.table}} = sg.Window('Edit {{form.table}}', edit_{{form.table}}_layout)
+
+    # Run the Event Loop
+    while True:
+        event, values = win_edit_{{form.table}}.read()
+        if event == 'Cancel' or event == "Exit" or event == sg.WIN_CLOSED:
+            break
+        if event == 'key_{{form.table}}_save':
+            try:
+                db_util.update_{{form.table}}(con, dao.{{ curTable.classname }}(values, 'key_edit_{{form.table}}_'))
+                con.commit()
+            except Exception as e:
+                print ("Error %s:" % e.args[0])
+                con.rollback()
+
+{{form.name}}_layout = []
+{{form.name}}_layout.append([sg.In(size=(20, 1), enable_events=True, key='in_{{form.name}}_{{form.table}}_{{searchColumnName}}'), 
+    sg.Button(button_text='Search', key='key_{{findMethod}}')])
+
+main_form_layout.append(
+    [sg.Listbox(values=[], enable_events=True, size=(60, 10), key='lb_{{form.name}}_{{form.table}}', 
+    select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED)])
+# create window
+window = sg.Window('{{form.name}}', layout={{form.name}}_layout, finalize=True)
+
+# Add the ability to double-click a cell
+window['lb_{{form.name}}_{{form.table}}'].bind('<Double-Button-1>' , "+-double click-")
+
+# connect to DB
+con = lite.connect('data/test.db')
+
+# Event Loop
+while True:
+
+    event, values = window.read()
+    if event == "Exit" or event == sg.WIN_CLOSED:
+        break
+
+    if event == 'key_{{findMethod}}':
+        toFind = values['in_{{form.name}}_{{form.table}}_{{searchColumnName}}']
+        list = db_util.{{findMethod}}(con, toFind)
+        window['lb_{{form.name}}_{{form.table}}'].update(dao.convTo2d(list))
+
+    if event == "lb_{{form.name}}_{{form.table}}+-double click-" or event == "Edit item":
+        if len(values['lb_{{form.name}}_{{form.table}}']) > 0:
+            {{form.table}}Obj = dao.{{curTable.classname}}(values['lb_{{form.name}}_{{form.table}}'][0])
+            edit_{{form.table}}(con, {{form.table}}Obj.{{curTable.pkColumns[0]}})
+
+window.close()
+if con:
+    con.close()
+
